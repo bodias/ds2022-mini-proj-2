@@ -2,6 +2,7 @@ import sys
 import rpyc
 import threading
 from rpyc.utils.server import ThreadedServer
+from generals import General
 
 generals, port_prefix = [], 4000
 
@@ -14,24 +15,30 @@ else:
 class Coordinator(rpyc.Service):
 	"""Coordinator Service to facilitate interaction between driver code and the generals (Process nodes)"""
 	def on_connect(self, conn):
+		self.next_id = 0
 		if verbose:
 			print("SERVER: connected to Driver. Awaiting Generals to be initialized")
 
 	def on_disconnect(self, conn):
 		exit_program()
 
-	def exposed_initialize_generals(self, generals_count):
-		from generals import General
+	def add_generals(self, generals_count):
 		for general_id in range(generals_count):
 			# General(IP, PORT_ID, NAME, STATE, STATUS(Primary/Secondary))
-			if general_id == 0:
-				general = General("localhost", int(port_prefix + general_id + 1), general_id + 1, "NF", "primary", verbose)
+			self.next_id += 1
+			if not generals:
+				general = General("localhost", int(port_prefix + self.next_id), self.next_id, "NF", "primary", verbose)
 			else:
-				general = General("localhost", int(port_prefix + general_id + 1), general_id + 1, "NF", "secondary", verbose)
+				general = General("localhost", int(port_prefix + self.next_id), self.next_id, "NF", "secondary", verbose)
 			if verbose:
-				print(f"SERVER: General G{general_id + 1} initialized: {general}")
+				print(f"SERVER: General G{self.next_id} initialized: {general}")
 			generals.append(general)
 		return None
+
+
+	def exposed_initialize_generals(self, generals_count):
+		return self.add_generals(generals_count)
+
 
 	def exposed_remote_command(self, command_args):
 		remote_command = command_args[0]
@@ -98,6 +105,19 @@ class Coordinator(rpyc.Service):
 						print("USAGE: g-state <general_id> [FAULTY|NON-FAULTY]")
 				except Exception as e:
 					print(f"Exception raised: {e}")
+			"""
+				Iterate through all connections and fetch general states
+			"""
+			for general in generals:
+				print(general.get_state())
+			return None
+
+		elif remote_command == "g-add":
+			if len(command_args) > 1:
+				if command_args[1].isdigit():
+					self.add_generals(int(command_args[1]))
+				else:
+					print("USAGE: g-add <general_id> [FAULTY|NON-FAULTY]")
 			"""
 				Iterate through all connections and fetch general states
 			"""
