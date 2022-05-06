@@ -15,13 +15,16 @@ class General:
 		self.reciever = self.init_reciever()
 		self.verbose = verbose
 		self.order = None
+		self.majority = None
+		self.decisions = None
+		self.round = None
 		self.start()
 
 	def __str__(self):
-		return f"G{self.name}, {self.status}, majority=?, state={self.state}"
+		return f"G{self.name}, {self.status}, majority={self.majority}, state={self.state}"
 
 	def get_state(self):
-		return f"G{self.name}, {self.status}, state={self.state}"
+		return f"G{self.name}, {self.status}, state={self.state}, {self.round}"
 
 	def set_state(self, state):
 		if state.upper() == "FAULTY":
@@ -72,8 +75,8 @@ class General:
 
 	def broadcast(self, dest_id_list, intent, payload):
 		myid = self.get_address()
-		if self.verbose:
-			print(f"{myid} => Broadcasting message: {intent} {payload}")
+		# if self.verbose:
+		# 	print(f"{myid} => Broadcasting message: {intent} {payload}")
 		for dest_id in dest_id_list:
 			if dest_id != myid:
 				self.send(dest_id, intent, payload)
@@ -88,16 +91,39 @@ class General:
 		else:
 			return self.order
 
-	def cast_vote(self, quorum):
-		myid = self.get_address()
-		for dest_id in quorum:
-			if dest_id != myid:
-				payload = {"sender": self.get_address(), "vote": self.get_vote()}
-				self.send(dest_id, "VOTE", payload)
+	def cast_vote(self, primary, quorum):
+		try:
+			if not self.round:
+				self.init_round(primary, quorum)
+			myid = self.get_address()
+			for dest_id in quorum:
+				if dest_id != myid:
+					payload = {"sender": self.get_address(), "vote": self.get_vote()}
+					self.send(dest_id, "VOTE", payload)
+			# if self.verbose:
+			# 	print(self.round, self)
+		except Exception as e:
+			print(f"{self.name} {e}")
+
+	def send_order(self, quorum, order):
+		self.order = order
+		self.init_round(self.get_address(), quorum)
+		message = {"primary": self.get_address(), "order": order, "quorum": quorum}
+		self.broadcast(quorum, "ORDR", message)
+		self.cast_vote(self.get_address(), quorum)
+
 
 	def pending_majority(self):
-		#TODO : YET TO BE IMPLEMENTED 
-		return False
+		return self.round['pending_votes']
+
+	def save_vote(self, payload):
+		self.round[payload['vote']] += 1
+		self.round['pending_votes'] -= 1
+
+	def init_round(self, primary, quorum):
+		self.round = {"pending_votes": len(quorum), "attack": 0, "retreat": 0, "primary": primary}
+		self.round[self.order] += 1
+		self.round['pending_votes'] -= 1
 
 	def close(self):
 		self.reciever.close()
@@ -124,17 +150,24 @@ class General:
 			if not isinstance(response, bool):
 				_, task, payload = response
 				if task == "ORDR":
-					if self.verbose:
-						print(f"payload => order: {payload['order']} quorum: {payload['quorum']}")
 					self.order = payload['order']
-					self.primary = payload['primary']
 					# Propogate vote
-					self.cast_vote(payload['quorum'])
+					self.cast_vote(payload['primary'], payload['quorum'])
 				elif task == "VOTE":
-					if self.verbose:
-						print(f"payload => order: {payload['vote']} sender: {payload['sender']}")
-					if self.pending_majority():
-						self.save_vote(payload)
-
+					if self.round:
+						if self.pending_majority():
+							self.save_vote(payload)
+						if self.round['pending_votes'] == 0:
+							if self.round["attack"] > self.round['retreat']:
+								self.majority = "attack"
+							else:
+								self.majority = "retreat"
+							self.send(self.round['primary'], "DCSN", {"majority":self.majority, "sender": self.get_address()})
+							self.round = None
+					else:
+						print("ROUND NOT INITIALIZED")
+				elif task == "DCSN":
+					...
+					# To be added
 				else:
-					print(self.name, task, payload)
+					print(self.name, _, task, payload)
