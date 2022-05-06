@@ -82,6 +82,23 @@ class General:
 	def get_address(self):
 		return f"{self.ip}:{self.port}"
 
+	def get_vote(self):
+		if self.state == "F":
+			return random.choice(["attack", "retreat"])
+		else:
+			return self.order
+
+	def cast_vote(self, quorum):
+		myid = self.get_address()
+		for dest_id in quorum:
+			if dest_id != myid:
+				payload = {"sender": self.get_address(), "vote": self.get_vote()}
+				self.send(dest_id, "VOTE", payload)
+
+	def pending_majority(self):
+		#TODO : YET TO BE IMPLEMENTED 
+		return False
+
 	def close(self):
 		self.reciever.close()
 		return True
@@ -106,4 +123,18 @@ class General:
 			response = self.listen()
 			if not isinstance(response, bool):
 				_, task, payload = response
-				# Process Order
+				if task == "ORDR":
+					if self.verbose:
+						print(f"payload => order: {payload['order']} quorum: {payload['quorum']}")
+					self.order = payload['order']
+					self.primary = payload['primary']
+					# Propogate vote
+					self.cast_vote(payload['quorum'])
+				elif task == "VOTE":
+					if self.verbose:
+						print(f"payload => order: {payload['vote']} sender: {payload['sender']}")
+					if self.pending_majority():
+						self.save_vote(payload)
+
+				else:
+					print(self.name, task, payload)
