@@ -1,4 +1,5 @@
 import sys
+import time
 import rpyc
 import threading
 from rpyc.utils.server import ThreadedServer
@@ -64,7 +65,7 @@ class Coordinator(rpyc.Service):
 				for general in generals:
 					if general.status == "primary":
 						primary_general = general
-					quorum.append(f"{general.ip}:{general.port}")
+					quorum.append(general.get_address())
 				if verbose:
 					print(quorum)
 					print("primary: ", primary_general)
@@ -72,23 +73,19 @@ class Coordinator(rpyc.Service):
 				if not primary_general:
 					generals[0].status = "primary"
 				# Broadcast the Order to generals (from Primary).
-				message = {"primary": f"{primary_general.ip}:{primary_general.port}", "order": order}
+				message = {"primary": f"{primary_general.ip}:{primary_general.port}", "order": order, "quorum": quorum}
 				primary_general.broadcast(quorum, "ordr", message)
 				primary_general.order = order
 				# Genrals recieve Orders and prepare for quorum.
-				for general in generals:
-					if general != primary_general:
-						_,_,received_order = general.listen()
-						general.order = received_order["order"]
+				# Exchange messages and Reach Consensus
+				# Report quorum to leader.
 
-				# Verify Order in quorum
+				## Print majority from each genral and then report final quorum decision. 
+				# for general in generals:
+				# 	print(general)
 
-				# Reach Decision
-
-				# Final Quorum
-
-				for general in generals:
-					print(general)
+				# sleep call just so all communication is carried out and outcome is reported back before allowing next command to be given
+				time.sleep(1)
 			else:
 				print("Unrecognized order ", order)
 
