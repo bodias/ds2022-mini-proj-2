@@ -79,11 +79,13 @@ class Coordinator(rpyc.Service):
 				# Report quorum to leader.
 
 				## Print majority from each genral and then report final quorum decision. 
-				# for general in generals:
-				# 	print(general)
-
-				# sleep call just so all communication is carried out and outcome is reported back before allowing next command to be given
 				time.sleep(1)
+				for general in generals:
+					print(general)
+
+				print(primary_general.decisions)
+				primary_general.decisions = []
+				# sleep call just so all communication is carried out and outcome is reported back before allowing next command to be given
 			else:
 				print("Unrecognized order ", order)
 

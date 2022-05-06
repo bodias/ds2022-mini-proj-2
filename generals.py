@@ -16,7 +16,7 @@ class General:
 		self.verbose = verbose
 		self.order = None
 		self.majority = None
-		self.decisions = None
+		self.decisions = []
 		self.round = None
 		self.start()
 
@@ -167,7 +167,6 @@ class General:
 					else:
 						print("ROUND NOT INITIALIZED")
 				elif task == "DCSN":
-					...
-					# To be added
+					self.decisions.append((payload["sender"], payload["majority"]))
 				else:
 					print(self.name, _, task, payload)
