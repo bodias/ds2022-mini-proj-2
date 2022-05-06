@@ -73,9 +73,7 @@ class Coordinator(rpyc.Service):
 				if not primary_general:
 					generals[0].status = "primary"
 				# Broadcast the Order to generals (from Primary).
-				message = {"primary": f"{primary_general.ip}:{primary_general.port}", "order": order, "quorum": quorum}
-				primary_general.broadcast(quorum, "ordr", message)
-				primary_general.order = order
+				primary_general.send_order(quorum, order)
 				# Genrals recieve Orders and prepare for quorum.
 				# Exchange messages and Reach Consensus
 				# Report quorum to leader.
