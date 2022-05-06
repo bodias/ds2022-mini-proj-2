@@ -1,4 +1,6 @@
 import os
+import random
+import _thread
 import socket
 
 from messenger import Messenger
@@ -13,6 +15,7 @@ class General:
 		self.reciever = self.init_reciever()
 		self.verbose = verbose
 		self.order = None
+		self.start()
 
 	def __str__(self):
 		return f"G{self.name}, {self.status}, majority=?, state={self.state}"
@@ -44,42 +47,63 @@ class General:
 			host, port = client_sock.getpeername()
 			listener_connection = Messenger(host, port, client_sock, self.verbose)
 			try:
-				msgtype, msgdata = listener_connection.receive()
+				intent, payload = listener_connection.receive()
 			except KeyboardInterrupt:
 				self.close()
 				return (False, False, False)
 			listener_connection.close()
 			opposite_id = "%s:%d" % (host, port)
-			if self.verbose:
-				print(f"Recieved message. MSGTYPE: {msgtype}, DATA: {msgdata}")
-			return (opposite_id, msgtype, msgdata)
+			return (opposite_id, intent, payload)
 		except:
 			return False
-	def send(self, dest_id, msgtype, msgdata):
+
+	def send(self, dest_id, intent, payload):
 		# destination peer id = ip:port
 		ip = dest_id.split(":")[0]
 		port = dest_id.split(":")[1]
 		# try to send
 		try :
 			messenger = Messenger(ip, port, None, self.verbose)
-			messenger.transmit(msgtype, msgdata)
+			messenger.transmit(intent, payload)
 		except KeyboardInterrupt:
 			self.close()
 			return False
 		return True
 
-	def broadcast(self, dest_id_list, msgtype, msgdata):
-		myid = "%s:%d" % (self.ip, self.port)
+	def broadcast(self, dest_id_list, intent, payload):
+		myid = self.get_address()
 		if self.verbose:
-			print(f"{myid} => Broadcasting message: {msgtype} {msgdata}")
+			print(f"{myid} => Broadcasting message: {intent} {payload}")
 		for dest_id in dest_id_list:
 			if dest_id != myid:
-				self.send(dest_id, msgtype, msgdata)
+				self.send(dest_id, intent, payload)
 		return True
 
-	def get_receiver_address(self):
-		return ip, port
+	def get_address(self):
+		return f"{self.ip}:{self.port}"
 
 	def close(self):
 		self.reciever.close()
 		return True
+
+	def start(self):
+		_thread.start_new_thread(self.run, ())
+
+
+	def run(self):
+		"""
+			Run background Task to await for messenger and act accordingly
+			
+			1. Listen to incoming socket.
+			2. Check the message intent and accordingly take suitable action.
+				a. Intent: order (passed as ORDR) 
+					Accept order from primary and vote in the quorum
+				b. Intent: Vote (passed as VOTE)
+					Register the vote in data structure and await quorum decision stage.
+					After recieving all votes, decide majority and inform the final decision to the primary genral.
+		"""
+		while True:
+			response = self.listen()
+			if not isinstance(response, bool):
+				_, task, payload = response
+				# Process Order

@@ -12,13 +12,13 @@ class Messenger:
 		self.sd = self.s.makefile("brw", 0)
 		self.verbose = verbose
 
-	def transmit(self, msgtype, msgdata):
+	def transmit(self, intent, payload):
 		try:
 			# packing the msg
-			msgtype = msgtype.encode()
-			msgdata = dict_to_bin(msgdata)
-			msglen = len(msgdata)
-			msg = struct.pack("!4sL%ds" % msglen, msgtype, msglen, msgdata)
+			intent = intent.encode()
+			payload = dict_to_bin(payload)
+			msglen = len(payload)
+			msg = struct.pack("!4sL%ds" % msglen, intent, msglen, payload)
 			# send the msg
 			self.sd.write(msg)
 			self.sd.flush()
@@ -34,8 +34,8 @@ class Messenger:
 
 	def receive(self):
 		try:
-			msgtype = self.sd.read(4)
-			if not msgtype :
+			intent = self.sd.read(4)
+			if not intent :
 				return (None, None)
 			lenstr = self.sd.read(4)
 			msglen = int(struct.unpack("!L", lenstr)[0])
@@ -55,9 +55,9 @@ class Messenger:
 			return (None, None)
 		#except:
 		#	return (None, None)
-		msgtype = msgtype.decode().upper()
-		msgdata = bin_to_dict(msg)
-		return (msgtype, msgdata)
+		intent = intent.decode().upper()
+		payload = bin_to_dict(msg)
+		return (intent, payload)
 
 	def close(self):
 		self.s.close()
