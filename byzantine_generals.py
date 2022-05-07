@@ -4,6 +4,7 @@ import rpyc
 import threading
 from rpyc.utils.server import ThreadedServer
 from generals import General
+from collections import Counter
 
 generals, port_prefix = [], 4000
 
@@ -11,7 +12,6 @@ if len(sys.argv) > 1 and sys.argv[-1] == "--verbose":
 	verbose = True
 else:
 	verbose = False
-
 
 class Coordinator(rpyc.Service):
 	"""Coordinator Service to facilitate interaction between driver code and the generals (Process nodes)"""
@@ -36,9 +36,40 @@ class Coordinator(rpyc.Service):
 			generals.append(general)
 		return None
 
-
 	def exposed_initialize_generals(self, generals_count):
 		return self.add_generals(generals_count)
+
+	def list_general_states(self):
+		"""
+			Iterate through all connections and fetch general states
+		"""
+		# 'generals' is a global variable
+		for general in generals:
+			print(general.get_state())
+
+	def execute_order(self, decisions):
+		"""
+		Execute order based on collective decision		
+		"""
+		# K members can fail assuming arbitrary failures.
+		# we need at least 3K + 1 members to reach consensus
+		total_nodes = len(generals)
+		faulty_nodes = [general for general in generals if general.state == "F"]
+		score = Counter([order[1] for order in decisions])		
+		# TODO: when K=0, what should I do? is there a minimum number of members still? Or just 3 is enough (to have majority)
+		min_score = (total_nodes // 2) + 1
+		required_nodes = 3 * (len(faulty_nodes)) + 1
+		print(min_score , required_nodes, total_nodes)
+		
+		if required_nodes > total_nodes:
+			print(f"Execute order: cannot be determined - not enough generals in the system! {len(faulty_nodes)} faulty node(s) in the system - {min_score} out of {total_nodes} quorum not consistent\n")
+			return
+		
+		collective_decision = score.most_common(1)[0][0]
+		print(f"Execute order: {collective_decision}! Non-faulty nodes in the system - {min_score} out of {total_nodes} quorum suggest {collective_decision}\n")
+
+		return
+
 
 
 	def exposed_remote_command(self, command_args):
@@ -53,7 +84,7 @@ class Coordinator(rpyc.Service):
 			exit_program()
 			sys.exit(0)
 
-		# handle exit
+		# handle actual-order
 		elif remote_command == "actual-order":
 			if len(command_args) < 2:
 				print("Define attack strategy.. e.g. 'actual-order attack' or 'actual-order retreat'")
@@ -62,6 +93,7 @@ class Coordinator(rpyc.Service):
 			order, quorum = command_args[1].lower(), []
 			if order == "attack" or order == "retreat":
 				# Build list of generals for consensus.
+				primary_general = None
 				for general in generals:
 					if general.status == "primary":
 						primary_general = general
@@ -69,21 +101,21 @@ class Coordinator(rpyc.Service):
 				if verbose:
 					print(quorum)
 					print("primary: ", primary_general)
-				# Elect Primary if not present.
-				if not primary_general:
-					generals[0].status = "primary"
 				# Broadcast the Order to generals (from Primary).
 				primary_general.send_order(quorum, order)
-				# Genrals recieve Orders and prepare for quorum.
+				# Generals receive Orders and prepare for quorum.
 				# Exchange messages and Reach Consensus
 				# Report quorum to leader.
 
-				## Print majority from each genral and then report final quorum decision. 
+				## Print majority from each general and then report final quorum decision. 
 				time.sleep(1)
 				for general in generals:
 					print(general)
 
-				print(primary_general.decisions)
+				print(f"Primary decisions: {primary_general.decisions}")
+				## Execute order
+				self.execute_order(decisions=primary_general.decisions)
+
 				primary_general.decisions = []
 				# sleep call just so all communication is carried out and outcome is reported back before allowing next command to be given
 			else:
@@ -102,40 +134,37 @@ class Coordinator(rpyc.Service):
 						print("USAGE: g-state <general_id> [FAULTY|NON-FAULTY]")
 				except Exception as e:
 					print(f"Exception raised: {e}")
-			"""
-				Iterate through all connections and fetch general states
-			"""
-			for general in generals:
-				print(general.get_state())
+			self.list_general_states()
 			return None
 
+		# handle g-add
 		elif remote_command == "g-add":
 			if len(command_args) > 1:
 				if command_args[1].isdigit():
 					self.add_generals(int(command_args[1]))
 				else:
-					print("USAGE: g-add <general_id> [FAULTY|NON-FAULTY]")
-			"""
-				Iterate through all connections and fetch general states
-			"""
-			for general in generals:
-				print(general.get_state())
+					print("USAGE: g-add <number of new generals>")
+			self.list_general_states()
 			return None
 
 		# handle g-kill
 		elif remote_command == "g-kill":
 			if len(command_args) > 1:
 				try:
+					is_primary = False
 					if command_args[1].isdigit():
 						input_general, general_to_remove = int(command_args[1]), None
 						for general in generals:
 							if general.name == input_general:
 								general.close()
 								general_to_remove = general
+								is_primary = general.status
 						if general_to_remove:
 							generals.remove(general_to_remove)
-						for general in generals:
-							print(general.get_state())
+						# Elect new Primary if previous one was removed.
+						if is_primary:
+							generals[0].status = "primary"
+						self.list_general_states()
 					else:
 						print("USAGE: g-state <general_id> [FAULTY|NON-FAULTY]")
 				except Exception as e:
@@ -151,7 +180,6 @@ class Coordinator(rpyc.Service):
 
 def run_process_service(server):
 	server.start()
-
 
 def exit_program():
 	for general in generals:

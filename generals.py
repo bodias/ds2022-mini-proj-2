@@ -12,7 +12,7 @@ class General:
 		self.name = name
 		self.state = state
 		self.status = status
-		self.reciever = self.init_reciever()
+		self.receiver = self.init_receiver()
 		self.verbose = verbose
 		self.order = None
 		self.majority = None
@@ -32,7 +32,7 @@ class General:
 		else:
 			self.state = "NF"
 
-	def init_reciever(self, backlog=5):
+	def init_receiver(self, backlog=5):
 		""" To construct and prepare a server socket listening on the given port."""
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -44,7 +44,7 @@ class General:
 	def listen(self):
 		""" Lisetning the received msg and handling """
 		try:
-			client_sock = self.reciever.accept()[0]
+			client_sock = self.receiver.accept()[0]
 			client_sock.settimeout(None)
 
 			host, port = client_sock.getpeername()
@@ -121,12 +121,13 @@ class General:
 		self.round['pending_votes'] -= 1
 
 	def init_round(self, primary, quorum):
+		# TODO: Does the order sent by the primary count? 
 		self.round = {"pending_votes": len(quorum), "attack": 0, "retreat": 0, "primary": primary}
 		self.round[self.order] += 1
 		self.round['pending_votes'] -= 1
 
 	def close(self):
-		self.reciever.close()
+		self.receiver.close()
 		return True
 
 	def start(self):
