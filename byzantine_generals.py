@@ -47,7 +47,7 @@ class Coordinator(rpyc.Service):
 		for general in generals:
 			print(general.get_state())
 
-	def execute_order(self, decisions):
+	def execute_order(self, quorum, decisions):
 		"""
 		Execute order based on collective decision		
 		"""
@@ -59,15 +59,17 @@ class Coordinator(rpyc.Service):
 		# TODO: when K=0, what should I do? is there a minimum number of members still? Or just 3 is enough (to have majority)
 		min_score = (total_nodes // 2) + 1
 		required_nodes = 3 * (len(faulty_nodes)) + 1
-		print(min_score , required_nodes, total_nodes)
+		collective_decision = score.most_common(1)[0][0]
+		print(f"scores: {score}, collective_decision: {collective_decision}")
 		
-		if required_nodes > total_nodes:
+		if required_nodes > total_nodes or collective_decision == "undefined":
 			print(f"Execute order: cannot be determined - not enough generals in the system! {len(faulty_nodes)} faulty node(s) in the system - {min_score} out of {total_nodes} quorum not consistent\n")
 			return
 		
-		collective_decision = score.most_common(1)[0][0]
-		print(f"Execute order: {collective_decision}! Non-faulty nodes in the system - {min_score} out of {total_nodes} quorum suggest {collective_decision}\n")
-
+		if faulty_nodes:
+			print(f"Execute order: {collective_decision}! {len(faulty_nodes)} faulty nodes in the system - {min_score} out of {total_nodes} quorum suggest {collective_decision}\n")
+		else:
+			print(f"Execute order: {collective_decision}! Non-faulty nodes in the system - {min_score} out of {total_nodes} quorum suggest {collective_decision}\n")
 		return
 
 
@@ -99,7 +101,7 @@ class Coordinator(rpyc.Service):
 						primary_general = general
 					quorum.append(general.get_address())
 				if verbose:
-					print(quorum)
+					print("quorum participants: ", quorum)
 					print("primary: ", primary_general)
 				# Broadcast the Order to generals (from Primary).
 				primary_general.send_order(quorum, order)
@@ -109,13 +111,13 @@ class Coordinator(rpyc.Service):
 
 				## Print majority from each general and then report final quorum decision. 
 				time.sleep(1)
+				if verbose:
+					print("Majorities observed:", primary_general.decisions)
+
 				for general in generals:
 					print(general)
-
-				print(f"Primary decisions: {primary_general.decisions}")
-				## Execute order
-				self.execute_order(decisions=primary_general.decisions)
-
+					general.round = None
+				self.execute_order(quorum, primary_general.decisions)
 				primary_general.decisions = []
 				# sleep call just so all communication is carried out and outcome is reported back before allowing next command to be given
 			else:
@@ -158,12 +160,11 @@ class Coordinator(rpyc.Service):
 							if general.name == input_general:
 								general.close()
 								general_to_remove = general
-								is_primary = general.status
 						if general_to_remove:
 							generals.remove(general_to_remove)
-						# Elect new Primary if previous one was removed.
-						if is_primary:
-							generals[0].status = "primary"
+							if general_to_remove.status == "primary":
+								generals[0].status = "primary"
+								primary_general = generals[0]
 						self.list_general_states()
 					else:
 						print("USAGE: g-state <general_id> [FAULTY|NON-FAULTY]")
