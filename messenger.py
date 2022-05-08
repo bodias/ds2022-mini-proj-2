@@ -2,6 +2,7 @@ import socket
 import struct
 import pickle
 
+# Based on https://github.com/hubts/my-pbft-simulation-py/blob/aae11d27700a4629ac0b00b57b5f5c229f26ac09/p2p_layer/connection.py
 class Messenger:
 	def __init__(self, destination_ip, destination_port, sock=None, verbose=False):
 		if not sock:
@@ -13,6 +14,9 @@ class Messenger:
 		self.verbose = verbose
 
 	def transmit(self, intent, payload):
+		"""
+			Build message, encode message_intent, pickle data to binary and build message packet
+		"""
 		try:
 			# packing the msg
 			intent = intent.encode()
@@ -26,13 +30,15 @@ class Messenger:
 			self.close()
 			return False
 		except Exception as e:
-			print(e)
+			if self.verbose:
+				print(e)
 			return False
-		#except:
-		#	return False
 		return True
 
 	def receive(self):
+		"""
+			Deconstruct message packet, decode message_intent, unpickle data from binary and return message to General
+		"""
 		try:
 			intent = self.sd.read(4)
 			if not intent :
@@ -51,10 +57,10 @@ class Messenger:
 			self.close()
 			return (None, None)
 		except Exception as e:
-			print(e)
+			if self.verbose:
+				print(e)
 			return (None, None)
-		#except:
-		#	return (None, None)
+
 		intent = intent.decode().upper()
 		payload = bin_to_dict(msg)
 		return (intent, payload)

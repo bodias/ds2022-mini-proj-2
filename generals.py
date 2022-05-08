@@ -6,7 +6,20 @@ import socket
 from messenger import Messenger
 
 class General:
-	def __init__(self, ip, port, name, state, status='seccondary', verbose=False):
+	def __init__(self, ip, port, name, state, status='secondary', verbose=False):
+		"""
+			Genral class init.
+				attr: 
+				ip, port : listener socket for incomming communication
+				name: Unique identifier (integer)
+				state: Indicates if general is a traitor or not
+				status: Indicates if general is Primary commander or not
+				verbose: CLI Flag propogated to show debugging print statements
+				order: saves order received from client/coordinator
+				majority: Saves majority votes received from generals in quorum
+				round: intermidiary buffer to save votes for each quorum consensus
+			start(): Initiates a background thread that implements a listener socket at address `ip:port` that handles incoming messages
+		"""
 		self.ip = ip
 		self.port = int(port)
 		self.name = name
@@ -24,7 +37,7 @@ class General:
 		return f"G{self.name}, {self.status}, majority={self.majority}, state={self.state}"
 
 	def get_state(self):
-		return f"G{self.name}, {self.status}, state={self.state}, {self.round}"
+		return f"G{self.name}, {self.status}, state={self.state}"
 
 	def set_state(self, state):
 		if state.upper() == "FAULTY":
@@ -33,7 +46,9 @@ class General:
 			self.state = "NF"
 
 	def init_receiver(self, backlog=5):
-		""" To construct and prepare a server socket listening on the given port."""
+		"""
+			Initialize receiver socket listening on the given (unique) port
+		"""
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		s.bind(('', self.port))
@@ -42,7 +57,9 @@ class General:
 		return s
 	
 	def listen(self):
-		""" Lisetning the received msg and handling """
+		"""
+			Handling received message packets and returning (SENDER, MESSAGE_INTENT, MESSAGE_PAYLOAD) form for further processing
+		"""
 		try:
 			client_sock = self.receiver.accept()[0]
 			client_sock.settimeout(None)
@@ -61,7 +78,9 @@ class General:
 			return False
 
 	def send(self, dest_id, intent, payload):
-		# destination peer id = ip:port
+		"""
+			building a message packet with (receiveR, MESSAGE_INTENT, MESSAGE_PAYLOAD) details to be communicated by an ad-hoc messenger obj.
+		"""
 		ip = dest_id.split(":")[0]
 		port = dest_id.split(":")[1]
 		# try to send
@@ -74,6 +93,9 @@ class General:
 		return True
 
 	def broadcast(self, dest_id_list, intent, payload):
+		"""
+			Utility to broadcast message to list of receivers
+		"""
 		myid = self.get_address()
 		# if self.verbose:
 		# 	print(f"{myid} => Broadcasting message: {intent} {payload}")
@@ -83,15 +105,25 @@ class General:
 		return True
 
 	def get_address(self):
+		"""
+			Helper method to build Address string. e.g. "localhost:4001"
+		"""
 		return f"{self.ip}:{self.port}"
 
 	def get_vote(self):
+		"""
+			If general is traitor, this method returns a random choice between attack or retreat.
+			Otherwise it simply returns the order that was received.
+		"""
 		if self.state == "F":
 			return random.choice(["attack", "retreat"])
 		else:
 			return self.order
 
 	def cast_vote(self, primary, quorum):
+		"""
+			Broadcasting vote to other generals in the quorum.
+		"""
 		try:
 			if not self.round:
 				self.init_round(primary, quorum)
@@ -106,6 +138,9 @@ class General:
 			print(f"{self.name} {e}")
 
 	def send_order(self, quorum, order):
+		"""
+			Primary general sends inital order to all other participating generals in the quorum
+		"""
 		self.order = order
 		self.init_round(self.get_address(), quorum)
 		message = {"primary": self.get_address(), "order": order, "quorum": quorum}
@@ -114,23 +149,37 @@ class General:
 
 
 	def pending_majority(self):
+		"""
+			Check if any votes are yet to be counted before reporting majority
+		"""
 		return self.round['pending_votes']
 
 	def save_vote(self, payload):
+		"""
+			Save incoming vote to the round DS
+		"""
 		self.round[payload['vote']] += 1
 		self.round['pending_votes'] -= 1
 
 	def init_round(self, primary, quorum):
-		# TODO: Does the order sent by the primary count? 
+		"""
+			Initialize dict to save vote counts
+		"""
 		self.round = {"pending_votes": len(quorum), "attack": 0, "retreat": 0, "primary": primary}
-		self.round[self.order] += 1
+		self.round[self.get_vote()] += 1
 		self.round['pending_votes'] -= 1
 
 	def close(self):
+		"""
+			Initialize dict to save vote counts
+		"""
 		self.receiver.close()
 		return True
 
 	def start(self):
+		"""
+			Executes "run" metho on new thread
+		"""
 		_thread.start_new_thread(self.run, ())
 
 
@@ -161,12 +210,15 @@ class General:
 						if self.round['pending_votes'] == 0:
 							if self.round["attack"] > self.round['retreat']:
 								self.majority = "attack"
-							else:
+							elif self.round["retreat"] > self.round['attack']:
 								self.majority = "retreat"
+							else:
+								self.majority = "undefined"
 							self.send(self.round['primary'], "DCSN", {"majority":self.majority, "sender": self.get_address()})
 							self.round = None
 					else:
-						print("ROUND NOT INITIALIZED")
+						if self.verbose:
+							print("ROUND NOT INITIALIZED")
 				elif task == "DCSN":
 					self.decisions.append((payload["sender"], payload["majority"]))
 				else:
