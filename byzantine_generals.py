@@ -58,21 +58,21 @@ class Coordinator(rpyc.Service):
 		# we need at least 3K + 1 members to reach consensus
 		total_nodes = len(generals)
 		faulty_nodes = [general for general in generals if general.state == "F"]
-		score = Counter([order[1] for order in decisions])				
-		min_score = (total_nodes // 2) + 1
+		score = Counter([decision["majority"] for decision in decisions if decision["general_state"]!="F"])
+		# min_score = (total_nodes // 2) + 1
 		# TODO: when K=0, what should I do? is there a minimum number of members still? Or just 3 is enough (to have majority)
 		required_nodes = 3 * (len(faulty_nodes)) + 1
-		collective_decision = score.most_common(1)[0][0]
-		print(f"scores: {score.most_common()}, collective_decision: {collective_decision}")
+		collective_decision = score.most_common(1)[0]
+		print(f"scores: {score.most_common()}, majority decision: {collective_decision[0]}")
 		
-		if required_nodes > total_nodes or collective_decision == "undefined":
-			print(f"Execute order: cannot be determined - not enough generals in the system! {len(faulty_nodes)} faulty node(s) in the system - {min_score} out of {total_nodes} quorum not consistent\n")
+		if required_nodes > total_nodes or collective_decision[0] == "undefined":
+			print(f"Execute order: cannot be determined - not enough generals in the system! {len(faulty_nodes)} faulty node(s) in the system - {collective_decision[1]} out of {total_nodes} quorum not consistent\n")
 			return
 		
 		if faulty_nodes:
-			print(f"Execute order: {collective_decision}! {len(faulty_nodes)} faulty nodes in the system - {min_score} out of {total_nodes} quorum suggest {collective_decision}\n")
+			print(f"Execute order: {collective_decision[0]}! {len(faulty_nodes)} faulty nodes in the system - {collective_decision[1]} out of {total_nodes} quorum suggest {collective_decision[0]}\n")
 		else:
-			print(f"Execute order: {collective_decision}! Non-faulty nodes in the system - {min_score} out of {total_nodes} quorum suggest {collective_decision}\n")
+			print(f"Execute order: {collective_decision[0]}! Non-faulty nodes in the system - {collective_decision[1]} out of {total_nodes} quorum suggest {collective_decision[0]}\n")
 		return
 
 	def exposed_remote_command(self, command_args):
@@ -100,7 +100,8 @@ class Coordinator(rpyc.Service):
 				for general in generals:
 					if general.status == "primary":
 						primary_general = general
-					quorum.append(general.get_address())
+					else:
+						quorum.append(general.get_address())
 				if verbose:
 					print("quorum participants: ", quorum)
 					print("primary: ", primary_general)

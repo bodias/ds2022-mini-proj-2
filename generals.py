@@ -98,6 +98,8 @@ class General:
 		myid = self.get_address()
 		for dest_id in dest_id_list:
 			if dest_id != myid:
+				# override order with actual order or random choice if faulty node
+				payload["order"] = self.get_order()
 				self.send(dest_id, intent, payload)
 		return True
 
@@ -107,7 +109,7 @@ class General:
 		"""
 		return f"{self.ip}:{self.port}"
 
-	def get_vote(self):
+	def get_order(self):
 		"""
 			If general is traitor, this method returns a random choice between attack or retreat.
 			Otherwise it simply returns the order that was received.
@@ -123,11 +125,12 @@ class General:
 		"""
 		try:
 			if not self.round:
-				self.init_round(primary, quorum)
+				raise Exception("Quorum should've been initiated in primary node")
 			myid = self.get_address()
 			for dest_id in quorum:
+				# Only communicate between replicas
 				if dest_id != myid:
-					payload = {"sender": self.get_address(), "vote": self.get_vote()}
+					payload = {"sender": self.get_address(), "vote": self.get_order()}
 					self.send(dest_id, "VOTE", payload)
 		except Exception as e:
 			print(f"{self.name} {e}")
@@ -136,11 +139,13 @@ class General:
 		"""
 			Primary general sends inital order to all other participating generals in the quorum
 		"""
-		self.order = order
-		self.init_round(self.get_address(), quorum)
-		message = {"primary": self.get_address(), "order": order, "quorum": quorum}
-		self.broadcast(quorum, "ORDR", message)
-		self.cast_vote(self.get_address(), quorum)
+		self.order = order		
+		self.majority = order
+		self.decisions = []
+		## "order" will be changed during broadcast assuming a random value if node is faulty
+		payload = {"primary": self.get_address(), "order": None, "quorum": quorum}
+		self.broadcast(quorum, "ORDR", payload)
+		# self.cast_vote(self.get_address(), quorum)
 
 
 	def pending_majority(self):
@@ -161,8 +166,9 @@ class General:
 			Initialize dict to save vote counts
 		"""
 		self.round = {"pending_votes": len(quorum), "attack": 0, "retreat": 0, "primary": primary}
-		self.round[self.get_vote()] += 1
+		self.round[self.order] += 1
 		self.round['pending_votes'] -= 1
+		print(f"Init round: {self.round}")
 
 	def close(self):
 		"""
@@ -196,12 +202,16 @@ class General:
 				_, task, payload = response
 				if task == "ORDR":
 					self.order = payload['order']
+					self.init_round(payload['primary'], payload['quorum'])
 					# Propogate vote
 					self.cast_vote(payload['primary'], payload['quorum'])
 				elif task == "VOTE":
 					if self.round:
-						if self.pending_majority():
-							self.save_vote(payload)
+						print(f"{self.name} - received VOTE: {payload}")
+						# if self.pending_majority():
+						self.save_vote(payload)
+						print(self.round)
+						# if all votes have been received report majority back to primary
 						if self.round['pending_votes'] == 0:
 							if self.round["attack"] > self.round['retreat']:
 								self.majority = "attack"
@@ -209,12 +219,12 @@ class General:
 								self.majority = "retreat"
 							else:
 								self.majority = "undefined"
-							self.send(self.round['primary'], "DCSN", {"majority":self.majority, "sender": self.get_address()})
+							self.send(self.round['primary'], "DCSN", {"majority":self.majority, "sender": self.get_address(), "general_state": self.state})
 							self.round = None
 					else:
 						if self.verbose:
 							print("ROUND NOT INITIALIZED")
 				elif task == "DCSN":
-					self.decisions.append((payload["sender"], payload["majority"]))
+					self.decisions.append(payload)
 				else:
 					print(self.name, _, task, payload)
