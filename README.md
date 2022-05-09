@@ -1,5 +1,5 @@
-# ds2022-mini-proj-1
-## Distributed Systems mini project 1 - The Byzantine General’s problem with Consensus
+# ds2022-mini-proj-2
+## Distributed Systems mini project 2 - The Byzantine General’s problem with Consensus
 
 Authors: Braian O. Dias,  Amey Chandrakant Dareka
 
