@@ -6,7 +6,7 @@ from rpyc.utils.server import ThreadedServer
 from generals import General
 from collections import Counter
 
-generals, port_prefix = [], 4000
+generals, port_prefix = [], 5000
 
 if len(sys.argv) > 1 and sys.argv[-1] == "--verbose":
 	verbose = True
@@ -58,15 +58,22 @@ class Coordinator(rpyc.Service):
 		# we need at least 3K + 1 members to reach consensus
 		total_nodes = len(generals)
 		faulty_nodes = [general for general in generals if general.state == "F"]
-		score = Counter([decision["majority"] for decision in decisions if decision["general_state"]!="F"])
-		# min_score = (total_nodes // 2) + 1
-		# TODO: when K=0, what should I do? is there a minimum number of members still? Or just 3 is enough (to have majority)
-		required_nodes = 3 * (len(faulty_nodes)) + 1
-		collective_decision = score.most_common(1)[0]
+		score = Counter([decision["majority"] for decision in decisions])
+		# when K=0, 3 nodes is enough to have majority (it assumes all nodes are Non-Faulty)
+		# when k>1, use the 3k + 1 rule		
+		required_nodes = max(3, 3 * (len(faulty_nodes)) + 1)
+		# used top 2 because we can have 1 undefined 1 attack|retreat the most_common() will be inconsistent
+		top_2_decisions = score.most_common(2)		
+		collective_decision = top_2_decisions[0] 
+		# if top 2 decisions have same number of votes, it's a tie		
+		if len(top_2_decisions)>1:
+			if top_2_decisions[0][1] == top_2_decisions[1][1]:
+				collective_decision = ("undefined", top_2_decisions[0][1])
+			
 		print(f"scores: {score.most_common()}, majority decision: {collective_decision[0]}")
 		
 		if required_nodes > total_nodes or collective_decision[0] == "undefined":
-			print(f"Execute order: cannot be determined - not enough generals in the system! {len(faulty_nodes)} faulty node(s) in the system - {collective_decision[1]} out of {total_nodes} quorum not consistent\n")
+			print(f"Execute order: cannot be determined - not enough generals in the system (required {required_nodes})! {len(faulty_nodes)} faulty node(s) in the system - {collective_decision[1]} out of {total_nodes} quorum not consistent\n")
 			return
 		
 		if faulty_nodes:
@@ -95,7 +102,7 @@ class Coordinator(rpyc.Service):
 
 			order, quorum = command_args[1].lower(), []
 			if order == "attack" or order == "retreat":
-				# Build list of generals for consensus.
+				# Build list of secondary generals for consensus.
 				primary_general = None
 				for general in generals:
 					if general.status == "primary":
@@ -105,14 +112,18 @@ class Coordinator(rpyc.Service):
 				if verbose:
 					print("quorum participants: ", quorum)
 					print("primary: ", primary_general)
-				# Broadcast the Order to generals (from Primary).
-				primary_general.send_order(quorum, order)
+				# send_order Broadcasts the Order to generals (from Primary).
 				# Generals receive Orders and prepare for quorum.
 				# Exchange messages and Reach Consensus
 				# Report quorum to leader.
+				primary_general.send_order(quorum, order)
 
 				## Print majority from each general and then report final quorum decision. 
-				time.sleep(1)
+				# print("Waiting for generals to communicate.", end ="")
+				while len(primary_general.decisions) < len(quorum):
+					# print(f".{len(primary_general.decisions)},{len(quorum)}", end="")
+					time.sleep(0.5)
+				# print("")
 				if verbose:
 					print("Majorities observed:", primary_general.decisions)
 
@@ -195,9 +206,7 @@ def exit_program():
 		general.close()
 	coordinator.close()
 
-
 if __name__ == '__main__':
-	# To run Server and driver processes separately, comment the following code block and run server in separate terminal
 	coordinator = ThreadedServer(Coordinator, port = 18811)
 	try:
 		# Launching the RPC server in a separate daemon thread (killed on exit)
@@ -206,6 +215,10 @@ if __name__ == '__main__':
 
 		if len(sys.argv) > 1:
 			if int(sys.argv[1]) > 0:
+				if len(sys.argv)>2:
+					print(f"changing default port to {sys.argv[2]}")
+					port_prefix = int(sys.argv[2])
+
 				try:
 					conn = rpyc.connect("localhost", 18811)
 					if conn.root:
