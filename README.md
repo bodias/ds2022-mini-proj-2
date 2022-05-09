@@ -17,7 +17,7 @@ Demo of the program can be seen [here](video/demo.mp4):
 To execute the progam run:
 
 ```
-python byzantine_generals.py N
+python generals_byzantine_program.py N
 ```
 Where `N` is the number of processes (generals) to be created during initialization.
 
@@ -29,7 +29,7 @@ The default port for communication start at `5000`, and each general has a diffe
 To specify a new starting port run:
 
 ```
-python byzantine_generals.py N STARTING_PORT
+python generals_byzantine_program.py N STARTING_PORT
 ```
 
 Where `STARTING_PORT` is the new starting port number.
